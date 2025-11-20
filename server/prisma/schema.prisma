@@ -1,0 +1,146 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+
+// ===== Enums =====
+
+enum UserRole {
+  ADMIN
+  PARTICIPANT
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum DrawType {
+  SINGLE_WINNER
+  MULTI_WINNER
+}
+
+enum DrawStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  COMPLETED
+}
+
+enum NotificationType {
+  WIN_RESULT
+  DRAW_OPEN
+  DRAW_CLOSED
+  GENERAL
+}
+
+enum NotificationChannel {
+  EMAIL
+  WEB
+}
+
+// ===== Models =====
+
+model User {
+  id            Int                 @id @default(autoincrement())
+  fullName      String
+  email         String              @unique
+  passwordHash  String
+  role          UserRole            @default(PARTICIPANT)
+  status        UserStatus          @default(ACTIVE)
+  createdAt     DateTime            @default(now())
+  lastLogin     DateTime?
+
+  // Relations
+  createdDraws  LuckyDraw[]         @relation("UserCreatedDraws")
+  entries       ParticipantEntry[]
+  notifications Notification[]
+}
+
+model LuckyDraw {
+  id                   Int                 @id @default(autoincrement())
+  title                String
+  description          String?
+  drawType             DrawType
+  startDateTime        DateTime
+  endDateTime          DateTime
+  drawDateTime         DateTime?
+  status               DrawStatus          @default(DRAFT)
+  eligibilityCriteria  String?
+  maxWinners           Int
+
+  createdById          Int
+  createdBy            User                @relation("UserCreatedDraws", fields: [createdById], references: [id])
+
+  createdAt            DateTime            @default(now())
+
+  // Relations
+  prizes               Prize[]
+  entries              ParticipantEntry[]
+  notifications        Notification[]
+}
+
+model Prize {
+  id              Int         @id @default(autoincrement())
+  drawId          Int
+  prizeName       String
+  prizeDescription String?
+  quantity        Int         @default(1)
+  prizeRank       Int         // 1 = top prize, 2,3,...
+
+  draw            LuckyDraw   @relation(fields: [drawId], references: [id])
+  winners         Winner[]
+}
+
+model ParticipantEntry {
+  id            Int         @id @default(autoincrement())
+  drawId        Int
+  userId        Int
+  entryTime     DateTime    @default(now())
+  ticketNumber  String?     // optional unique per draw
+  isValid       Boolean     @default(true)
+  invalidReason String?
+
+  draw          LuckyDraw   @relation(fields: [drawId], references: [id])
+  user          User        @relation(fields: [userId], references: [id])
+  winner        Winner?     // 0..1
+
+  @@unique([drawId, userId]) // one entry per user per draw (optional rule)
+}
+
+model Winner {
+  id         Int               @id @default(autoincrement())
+  entryId    Int               @unique
+  prizeId    Int
+  winTime    DateTime          @default(now())
+
+  entry      ParticipantEntry  @relation(fields: [entryId], references: [id])
+  prize      Prize             @relation(fields: [prizeId], references: [id])
+}
+
+model Notification {
+  id            Int                 @id @default(autoincrement())
+  userId        Int
+  drawId        Int?
+  type          NotificationType
+  channel       NotificationChannel
+  messageBody   String
+  sentAt        DateTime            @default(now())
+  isRead        Boolean             @default(false)
+
+  user          User                @relation(fields: [userId], references: [id])
+  draw          LuckyDraw?          @relation(fields: [drawId], references: [id])
+}
